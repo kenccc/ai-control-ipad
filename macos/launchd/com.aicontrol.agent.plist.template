@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.aicontrol.agent</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>__ROOT__/.venv/bin/python</string>
+    <string>-m</string>
+    <string>aicontrol.app</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>__ROOT__/apps/server</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PYTHONPATH</key>
+    <string>__ROOT__/apps/server</string>
+    <key>PATH</key>
+    <string>/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>AICONTROL_LOG_FORMAT</key>
+    <string>json</string>
+  </dict>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <!-- Restart if the daemon exits for any reason; the iPad reconnects on its own. -->
+  <key>KeepAlive</key>
+  <dict>
+    <key>SuccessfulExit</key>
+    <false/>
+  </dict>
+
+  <key>ThrottleInterval</key>
+  <integer>10</integer>
+
+  <key>StandardOutPath</key>
+  <string>__LOGDIR__/aicontrol.log</string>
+  <key>StandardErrorPath</key>
+  <string>__LOGDIR__/aicontrol.error.log</string>
+
+  <!-- A user LaunchAgent, so it runs as you and can reach the Keychain and ~/.codex. -->
+  <key>ProcessType</key>
+  <string>Interactive</string>
+</dict>
+</plist>
