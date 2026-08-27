@@ -54,6 +54,9 @@ class CodexRolloutProvider(AgentProvider):
         self.session_index = CodexSessionIndex()
         self._heads: dict[str, rollout_mod.RolloutHead] = {}
         self._sessions: dict[str, AgentSession] = {}
+        #: (path, mtime) -> parsed status. A rollout that has not been written to since
+        #: the last scan cannot have changed state, so it is never re-read.
+        self._state_cache: dict[tuple[str, float], rollout_mod.RolloutState] = {}
         self._app_server = app_server
         self._app_server_lock = asyncio.Lock()
         self._daemon_cache: Optional[tuple[float, dict[str, Any]]] = None
@@ -99,14 +102,27 @@ class CodexRolloutProvider(AgentProvider):
         projects = {p.id: p for p in self.global_state.projects()}
 
         sessions: list[AgentSession] = []
+        live_keys: set[tuple[str, float]] = set()
         for head in heads:
-            state = await loop.run_in_executor(
-                None, lambda h=head: rollout_mod.parse_rollout(h.path, collect_events=False))
+            key = (str(head.path), head.mtime)
+            live_keys.add(key)
+            state = self._state_cache.get(key)
+            if state is None:
+                state = await loop.run_in_executor(
+                    None,
+                    lambda h=head: rollout_mod.parse_rollout(
+                        h.path, collect_events=False,
+                        tail_bytes=rollout_mod.STATUS_TAIL_BYTES))
+                self._state_cache[key] = state
             session = self._build_session(head, state, assignments, hints, titles, projects)
             await self._attach_git(session)
             sessions.append(session)
             self._heads[head.thread_id] = head
             self._sessions[head.thread_id] = session
+        # Drop cache entries for rollouts that moved on, so it tracks the working set
+        # rather than growing without bound.
+        for stale in set(self._state_cache) - live_keys:
+            del self._state_cache[stale]
         return sessions
 
     def _read_heads(self) -> list[rollout_mod.RolloutHead]:

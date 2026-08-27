@@ -296,9 +296,35 @@ _REASONING_TYPES = {"agent_reasoning", "agent_reasoning_delta", "reasoning",
 STALE_TURN_SECONDS = 180.0
 
 
+#: How much of the end of a rollout is enough to determine current state. Status
+#: depends only on recent events, so a status scan reads the tail rather than the whole
+#: file -- the difference between a dashboard that refreshes in milliseconds and one
+#: that re-reads hundreds of megabytes every two seconds.
+STATUS_TAIL_BYTES = 256 * 1024
+
+
+def _open_from_tail(path: Path, tail_bytes: int):
+    """Open a rollout positioned at a line boundary near its end."""
+    fh = path.open("r", errors="ignore")
+    try:
+        size = path.stat().st_size
+    except OSError:
+        return fh, False
+    if size <= tail_bytes:
+        return fh, False
+    fh.seek(size - tail_bytes)
+    fh.readline()          # discard the partial line we landed in the middle of
+    return fh, True
+
+
 def parse_rollout(path: Path, *, collect_events: bool = True,
-                  max_events: int = 2000) -> RolloutState:
-    """Full pass over a rollout, producing status, current action and transcript."""
+                  max_events: int = 2000,
+                  tail_bytes: Optional[int] = None) -> RolloutState:
+    """Pass over a rollout, producing status, current action and transcript.
+
+    `tail_bytes` limits the read to the end of the file. Use it for status polling;
+    leave it None when the full transcript is needed.
+    """
     state = RolloutState()
     open_turn: Optional[str] = None
     last_ts: Optional[float] = None
@@ -307,8 +333,12 @@ def parse_rollout(path: Path, *, collect_events: bool = True,
     aborted = False
     errored = False
 
+    truncated = False
     try:
-        fh = path.open("r", errors="ignore")
+        if tail_bytes:
+            fh, truncated = _open_from_tail(path, tail_bytes)
+        else:
+            fh = path.open("r", errors="ignore")
     except OSError:
         return state
 
@@ -461,6 +491,20 @@ def parse_rollout(path: Path, *, collect_events: bool = True,
                     state.events.append(SessionEvent(
                         kind=EventKind.ERROR, timestamp=ts,
                         text=payload.get("message"), turn_id=open_turn))
+
+    if truncated and (state.cwd is None or state.model is None):
+        head = read_head(path)
+        if head:
+            state.cwd = state.cwd or head.cwd
+        if state.model is None:
+            state.model = read_model(path)
+    if truncated and last_ts is None:
+        # The tail contained no timestamped record at all; fall back to the file's own
+        # mtime rather than reporting "unknown".
+        try:
+            last_ts = path.stat().st_mtime
+        except OSError:
+            last_ts = None
 
     state.last_activity = last_ts
     state.active_turn_id = open_turn
