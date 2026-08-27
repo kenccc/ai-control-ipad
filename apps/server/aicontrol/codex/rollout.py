@@ -156,6 +156,42 @@ def read_head(path: Path) -> Optional[RolloutHead]:
     )
 
 
+#: Walking the whole session store costs thousands of stat calls, and the historical
+#: part of it never changes, so the deep walk is cached. The *recent* day directories
+#: are always re-listed, because a brand-new session must appear on the iPad within one
+#: reconcile -- caching those would delay the product's core promise by the whole TTL.
+_LISTING_TTL = 30.0
+_RECENT_DAYS = 2
+_listing_cache: "tuple[float, list[tuple[float, Path]]] | None" = None
+
+
+def reset_listing_cache() -> None:
+    """Drop the cached deep walk. Used by tests and whenever CODEX_HOME changes."""
+    global _listing_cache
+    _listing_cache = None
+
+
+def _recent_day_dirs(now: float) -> list[Path]:
+    from datetime import datetime, timedelta
+    dirs = []
+    for offset in range(_RECENT_DAYS + 1):
+        day = datetime.fromtimestamp(now) - timedelta(days=offset)
+        candidate = SESSIONS_DIR / f"{day.year:04d}" / f"{day.month:02d}" / f"{day.day:02d}"
+        if candidate.is_dir():
+            dirs.append(candidate)
+    return dirs
+
+
+def _stat_rollouts(paths) -> list[tuple[float, Path]]:
+    out: list[tuple[float, Path]] = []
+    for path in paths:
+        try:
+            out.append((path.stat().st_mtime, path))
+        except OSError:
+            continue
+    return out
+
+
 def read_model(path: Path, *, max_lines: int = 200) -> Optional[str]:
     """Find the model from the first `turn_context`, which sits near the file's head."""
     try:
@@ -180,19 +216,29 @@ def read_model(path: Path, *, max_lines: int = 200) -> Optional[str]:
 
 def iter_rollouts(since: Optional[float] = None) -> Iterator[Path]:
     """Yield rollout paths, newest first, optionally only those modified since `since`."""
+    global _listing_cache
     if not SESSIONS_DIR.is_dir():
         return
 
-    paths: list[tuple[float, Path]] = []
-    for path in SESSIONS_DIR.rglob("rollout-*.jsonl"):
-        try:
-            mtime = path.stat().st_mtime
-        except OSError:
-            continue
+    now = time.time()
+    cached = _listing_cache
+    if cached and now - cached[0] < _LISTING_TTL:
+        entries = list(cached[1])
+        # Always re-list the last few days, so a session started seconds ago is found
+        # on the very next reconcile instead of waiting out the cache.
+        known = {path for _, path in entries}
+        for day_dir in _recent_day_dirs(now):
+            for mtime, path in _stat_rollouts(day_dir.glob("rollout-*.jsonl")):
+                if path not in known:
+                    entries.append((mtime, path))
+    else:
+        entries = _stat_rollouts(SESSIONS_DIR.rglob("rollout-*.jsonl"))
+        _listing_cache = (now, entries)
+
+    entries.sort(key=lambda item: item[0], reverse=True)
+    for mtime, path in entries:
         if since is not None and mtime < since:
             continue
-        paths.append((mtime, path))
-    for _, path in sorted(paths, key=lambda item: item[0], reverse=True):
         yield path
 
 
