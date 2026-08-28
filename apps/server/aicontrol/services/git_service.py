@@ -52,6 +52,10 @@ async def _git(cwd: Path, *args: str, timeout: float = 25.0) -> tuple[int, str, 
 class GitService:
     def __init__(self, cache_ttl: float = 3.0) -> None:
         self._cache: dict[str, tuple[float, GitState]] = {}
+        # Many sessions share one working directory, so diff stats are cached per
+        # directory rather than recomputed per session -- otherwise a repo with 150
+        # recorded sessions runs the same `git diff` 150 times per reconcile.
+        self._diff_cache: dict[tuple[str, str], tuple[float, DiffStats]] = {}
         self._cache_ttl = cache_ttl
 
     async def is_repo(self, path: str | Path) -> bool:
@@ -108,7 +112,15 @@ class GitService:
         self._cache[key] = (now, state)
         return state
 
-    async def diff_stats(self, path: str | Path, *, base: Optional[str] = "HEAD") -> DiffStats:
+    async def diff_stats(self, path: str | Path, *, base: Optional[str] = "HEAD",
+                         use_cache: bool = True) -> DiffStats:
+        key = (str(path), base or "")
+        now = asyncio.get_running_loop().time()
+        if use_cache:
+            cached = self._diff_cache.get(key)
+            if cached and now - cached[0] < self._cache_ttl:
+                return cached[1]
+
         # Default to HEAD so staged work counts: an agent that ran `git add` has still
         # changed the tree, and showing +0 -0 there would be wrong.
         args = ["diff", "--numstat"]
@@ -117,6 +129,7 @@ class GitService:
         code, out, _ = await _git(Path(path), *args)
         stats = DiffStats()
         if code != 0:
+            self._diff_cache[key] = (now, stats)
             return stats
         files = 0
         for line in out.splitlines():
@@ -150,6 +163,7 @@ class GitService:
             except OSError:
                 continue
         stats.files_changed = files
+        self._diff_cache[key] = (now, stats)
         return stats
 
     async def changed_files(self, path: str | Path, *,
