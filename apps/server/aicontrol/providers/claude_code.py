@@ -222,31 +222,58 @@ def _title_from_head(path: Path, *, max_lines: int = 400) -> Optional[str]:
     return first_prompt
 
 
-def _slug_to_path(slug: str) -> Optional[str]:
-    """`-Users-ken-SpecialGuard-DEV` -> a real directory, when one exists.
+#: Resolved slugs, so the filesystem walk below runs once per project directory.
+_SLUG_CACHE: dict[str, Optional[str]] = {}
 
-    The slug is lossy: both `/` and `_` collapse to `-`, so the mapping is resolved by
-    walking the filesystem rather than by string substitution. The cwd recorded inside
-    the session file is authoritative and preferred; this is only a fallback.
+
+def _resolve_slug(parts: list[str], base: Path) -> Optional[Path]:
+    """Match slug components against real directories, greedily joining as needed.
+
+    The slug is lossy: Claude Code replaces `/`, `_` and `.` all with `-`, so
+    `-Users-ken-SpecialGuard-DEV` could be `/Users/ken/SpecialGuard/DEV` or
+    `/Users/ken/SpecialGuard_DEV`. One component of the slug can therefore correspond
+    to several components of the real path, which is resolved by trying the longest
+    join first and backtracking.
     """
-    parts = [p for p in slug.split("-") if p]
     if not parts:
+        return base
+    try:
+        entries = [e for e in base.iterdir() if e.is_dir()]
+    except OSError:
         return None
-    current = Path("/")
-    for part in parts:
-        candidate = current / part
-        if candidate.is_dir():
-            current = candidate
-            continue
-        merged = None
-        for entry in sorted(current.iterdir()) if current.is_dir() else []:
-            if entry.is_dir() and entry.name.replace("_", "-").replace(".", "-") == part:
-                merged = entry
-                break
-        if merged is None:
-            return str(current) if current != Path("/") else None
-        current = merged
-    return str(current)
+
+    def normalise(name: str) -> str:
+        # A leading dot becomes a leading dash, which the slug's empty-component
+        # filtering has already dropped -- so strip it here too.
+        return name.replace("_", "-").replace(".", "-").replace(" ", "-").lstrip("-")
+
+    # Try consuming as many slug components as possible, longest first, so
+    # `SpecialGuard_DEV` wins over a bare `SpecialGuard`.
+    for take in range(len(parts), 0, -1):
+        target = "-".join(parts[:take])
+        for entry in entries:
+            if normalise(entry.name) == target:
+                resolved = _resolve_slug(parts[take:], entry)
+                if resolved is not None:
+                    return resolved
+    return None
+
+
+def _slug_to_path(slug: str) -> Optional[str]:
+    """`-Users-ken-SpecialGuard-DEV` -> `/Users/ken/SpecialGuard_DEV`, or None.
+
+    Only a fallback: the `cwd` recorded inside the session file is authoritative and is
+    what is used in practice. When the slug cannot be fully resolved this returns None
+    rather than a partial path -- a confidently wrong working directory would attach a
+    session to the wrong repository, which is worse than admitting we do not know.
+    """
+    if slug in _SLUG_CACHE:
+        return _SLUG_CACHE[slug]
+    parts = [p for p in slug.split("-") if p]
+    resolved = _resolve_slug(parts, Path("/")) if parts else None
+    result = str(resolved) if resolved is not None else None
+    _SLUG_CACHE[slug] = result
+    return result
 
 
 class ClaudeCodeProvider(AgentProvider):
