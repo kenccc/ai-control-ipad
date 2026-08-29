@@ -303,9 +303,10 @@ class CodexAppServer:
     async def resume_thread(self, thread_id: str, *, path: Optional[str] = None,
                             cwd: Optional[str] = None,
                             approval_policy: Optional[str] = None) -> dict[str, Any]:
+        # `path` is deliberately accepted and ignored: thread/resume rejects it unless
+        # the client negotiated the experimentalApi capability, and thread_id alone is
+        # the documented preferred form. Verified to continue the same rollout file.
         params: dict[str, Any] = {"threadId": thread_id}
-        if path:
-            params["path"] = path
         if cwd:
             params["cwd"] = cwd
         if approval_policy:
