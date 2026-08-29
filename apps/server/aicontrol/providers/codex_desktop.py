@@ -29,8 +29,8 @@ from .codex_base import CodexRolloutProvider
 log = logging.getLogger("aicontrol.providers.codex_desktop")
 
 _NO_SHARED_DAEMON = (
-    "This thread is currently open in the Codex desktop app. Continuing it from here "
-    "needs the shared Codex app-server daemon, which is not installed. "
+    "This thread has a turn in progress in the Codex desktop app. Continuing it from "
+    "here needs the shared Codex app-server daemon, which is not installed. "
     "Run ./scripts/enable-codex-daemon.sh on the Mac, or reply in the desktop app."
 )
 _DESKTOP_ONLY_APPROVAL = "Approval required on Mac"
@@ -52,7 +52,11 @@ class CodexDesktopProvider(CodexRolloutProvider):
             terminal=False,
         )
 
-        thread_is_live = state.status.is_active and state.active_turn_id is not None
+        # An open turn means some process owns this thread right now. That is decided
+        # by the turn itself, never by the staleness heuristic -- a thread whose last
+        # write was minutes ago may still be mid-turn, and writing into it would mean
+        # two writers appending to one rollout file.
+        thread_is_live = state.active_turn_id is not None
 
         if not thread_is_live:
             # Idle on disk: thread/resume reattaches to this exact thread id, so a
