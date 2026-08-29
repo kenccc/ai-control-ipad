@@ -21,22 +21,50 @@ log = logging.getLogger("aicontrol.git")
 MAX_UNTRACKED_TO_COUNT = 200
 MAX_COUNTED_FILE_BYTES = 2_000_000
 
+#: Extensions we never line-count. A NUL-byte probe alone is not enough -- an archive
+#: or an image can easily have no NUL in its first few kilobytes and would otherwise
+#: report a meaningless line count.
+BINARY_SUFFIXES = frozenset({
+    ".zip", ".gz", ".tgz", ".bz2", ".xz", ".7z", ".rar", ".jar", ".war",
+    ".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico", ".bmp", ".tiff", ".avif",
+    ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx",
+    ".mp3", ".mp4", ".mov", ".avi", ".wav", ".ogg", ".webm",
+    ".woff", ".woff2", ".ttf", ".otf", ".eot",
+    ".so", ".dylib", ".dll", ".exe", ".bin", ".o", ".a", ".class",
+    ".sqlite", ".sqlite3", ".db", ".pyc", ".wasm",
+})
+
+
+def is_probably_binary(path: Path) -> bool:
+    if path.suffix.lower() in BINARY_SUFFIXES:
+        return True
+    try:
+        with path.open("rb") as fh:
+            return b"\x00" in fh.read(8192)
+    except OSError:
+        return True
+
+
 @dataclass
 class FileChange:
     path: str
     status: str          # M, A, D, R, ??
     insertions: int = 0
     deletions: int = 0
+    binary: bool = False
 
     def to_dict(self) -> dict:
         return {"path": self.path, "status": self.status,
-                "insertions": self.insertions, "deletions": self.deletions}
+                "insertions": self.insertions, "deletions": self.deletions,
+                "binary": self.binary}
 
 
 async def _git(cwd: Path, *args: str, timeout: float = 25.0) -> tuple[int, str, str]:
     try:
         proc = await asyncio.create_subprocess_exec(
-            "git", "-C", str(cwd), *args,
+            # core.quotepath=false keeps non-ASCII paths readable instead of
+            # C-escaped, which matters for a codebase with Czech filenames.
+            "git", "-c", "core.quotepath=false", "-C", str(cwd), *args,
             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
         )
     except OSError as exc:
@@ -89,7 +117,7 @@ class GitService:
         _, origin_out, _ = await _git(cwd, "remote", "get-url", "origin")
         state.origin_url = origin_out.strip() or None
 
-        _, porcelain, _ = await _git(cwd, "status", "--porcelain")
+        _, porcelain, _ = await _git(cwd, "status", "--porcelain", "-uall")
         for line in porcelain.splitlines():
             if not line:
                 continue
@@ -154,11 +182,9 @@ class GitService:
             try:
                 if not full.is_file() or full.stat().st_size > MAX_COUNTED_FILE_BYTES:
                     continue
+                if is_probably_binary(full):
+                    continue
                 with full.open("rb") as fh:
-                    chunk = fh.read(4096)
-                    if b"\x00" in chunk:      # binary
-                        continue
-                    fh.seek(0)
                     stats.insertions += sum(1 for _ in fh)
             except OSError:
                 continue
@@ -191,6 +217,9 @@ class GitService:
             code_pair, name = line[:2].strip(), line[3:]
             if " -> " in name:
                 name = name.split(" -> ", 1)[1]
+            # git still quotes names containing spaces or quotes.
+            if len(name) > 1 and name.startswith('"') and name.endswith('"'):
+                name = name[1:-1].replace('\\"', '"')
             existing = changes.get(name)
             status = "??" if code_pair == "??" else code_pair[0] if code_pair else "M"
             if existing:
@@ -202,8 +231,11 @@ class GitService:
             if change.status == "??" and change.insertions == 0:
                 full = cwd / change.path
                 try:
-                    if full.is_file() and full.stat().st_size < MAX_COUNTED_FILE_BYTES:
+                    if (full.is_file() and full.stat().st_size < MAX_COUNTED_FILE_BYTES
+                            and not is_probably_binary(full)):
                         change.insertions = sum(1 for _ in full.open("rb"))
+                    elif full.is_file():
+                        change.binary = True
                 except OSError:
                     pass
         return sorted(changes.values(), key=lambda c: c.path)
