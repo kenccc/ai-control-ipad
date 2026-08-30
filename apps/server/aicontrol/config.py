@@ -89,6 +89,7 @@ class Config:
     #: Opt-in: talk to the shared Codex app-server daemon for live desktop write control.
     codex_shared_daemon: bool = False
     worktree_root: Path = WORKTREE_ROOT
+    db_path: Path = DB_PATH
 
     def repo_for_path(self, path: str | Path) -> Optional[RepoConfig]:
         """Which allowlisted repository contains `path`, if any."""
@@ -131,6 +132,7 @@ class Config:
             "reconcileInterval": self.reconcile_interval,
             "codexSharedDaemon": self.codex_shared_daemon,
             "worktreeRoot": str(self.worktree_root),
+            "databasePath": str(self.db_path),
         }
 
 
@@ -150,6 +152,8 @@ def load_config(path: Path = CONFIG_PATH) -> Config:
     cfg.allowed_origins = list(raw.get("allowedOrigins") or [])
     if raw.get("worktreeRoot"):
         cfg.worktree_root = Path(raw["worktreeRoot"]).expanduser()
+    if raw.get("databasePath"):
+        cfg.db_path = Path(raw["databasePath"]).expanduser()
 
     for name, entry in (raw.get("repositories") or {}).items():
         if isinstance(entry, str):

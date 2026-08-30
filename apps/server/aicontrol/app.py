@@ -18,7 +18,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from .auth import CSRF_COOKIE, SESSION_COOKIE, AuthService
-from .config import DB_PATH, Config, load_config
+from .config import Config, load_config
 from .db import Database
 from .events import EventBus
 from .logging_setup import configure_logging
@@ -46,7 +46,7 @@ WEB_DIST = Path(__file__).resolve().parents[2] / "web" / "dist"
 
 def build_state(config: Optional[Config] = None) -> AppState:
     config = config or load_config()
-    db = Database(DB_PATH)
+    db = Database(config.db_path)
     bus = EventBus()
     auth = AuthService(config.auth_token, config.session_secret,
                        allowed_origins=config.allowed_origins)
