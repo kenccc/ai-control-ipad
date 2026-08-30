@@ -159,6 +159,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   // WebSocket with exponential backoff. The iPad suspends sockets when the app goes
   // to the background, so reconnecting silently is the normal case, not an error path.
+  const measureLatency = useCallback(async () => {
+    const started = performance.now()
+    try {
+      await fetch('/api/health', { cache: 'no-store', credentials: 'same-origin' })
+      setLatencyMs(Math.round(performance.now() - started))
+    } catch {
+      setLatencyMs(null)
+    }
+  }, [])
+
   useEffect(() => {
     if (!authenticated) return
     let cancelled = false
@@ -171,11 +181,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const socket = new WebSocket(`${protocol}//${location.host}/api/stream`)
       socketRef.current = socket
 
-      let pingSentAt = 0
       socket.onopen = () => {
         retryRef.current = 0
         setConnection('online')
-        pingSentAt = performance.now()
+        void measureLatency()
       }
       socket.onmessage = (raw) => {
         const message = JSON.parse(raw.data)
@@ -183,11 +192,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           case 'hello':
             dispatch({ type: 'replace', sessions: message.sessions,
                        lastReconcile: message.lastReconcile })
-            setLatencyMs(Math.round(performance.now() - pingSentAt))
             break
           case 'ping':
-            setLatencyMs(Math.round(performance.now() - pingSentAt))
-            pingSentAt = performance.now()
+            // The heartbeat proves the socket is alive; latency is measured
+            // separately, because the gap between heartbeats is the interval, not
+            // the round trip to the Mac.
+            void measureLatency()
             break
           case 'session.discovered':
           case 'session.created':
@@ -244,7 +254,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       document.removeEventListener('visibilitychange', onVisible)
       socketRef.current?.close()
     }
-  }, [authenticated, notify])
+  }, [authenticated, notify, measureLatency])
 
   const sessions = useMemo(
     () => state.order.map((id) => state.sessions[id]).filter(Boolean),
