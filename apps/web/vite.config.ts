@@ -38,5 +38,5 @@ export default defineConfig({
     },
   },
   build: { outDir: 'dist', sourcemap: false, target: 'es2020' },
-  test: { environment: 'jsdom', globals: true },
+  test: { environment: 'jsdom', globals: true, setupFiles: ['src/__tests__/setup.ts'] },
 })
