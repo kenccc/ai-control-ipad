@@ -74,7 +74,10 @@ export function DiagnosticsView() {
         </Section>
 
         <Section title="Codex CLI">
-          <Item label="Detected" ok={Boolean(data.codexCli.ok)} detail={data.codexCli.binary ?? '—'} />
+          {/* This is the core AI Control drives, which is the newest one installed --
+              usually the one bundled with the desktop app. Every core found on the
+              machine is listed under "Installed Codex cores" below. */}
+          <Item label="Binary in use" ok={Boolean(data.codexCli.ok)} detail={data.codexCli.binary ?? '—'} />
           <Item label="Version" ok={Boolean(data.codexCli.version)} detail={data.codexCli.version ?? '—'} />
         </Section>
 
@@ -121,13 +124,16 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 }
 
 function Item({ label, ok, detail }: { label: string; ok: boolean; detail?: string }) {
+  // Paths stay on one line and ellipsize; a remediation hint is a sentence and has to
+  // be readable, so it wraps instead.
+  const isHint = (detail?.length ?? 0) > 60 && detail!.includes(' ')
   return (
-    <div className="kv">
+    <div className="kv" style={isHint ? { alignItems: 'flex-start' } : undefined}>
       <span className="k row" style={{ gap: 7 }}>
         <span className={`dot ${ok ? 'running' : 'failed'}`} style={{ animation: 'none' }} />
         {label}
       </span>
-      <span className="v mono" title={detail}>{detail}</span>
+      <span className={isHint ? 'v-wrap' : 'v mono'} title={detail}>{detail}</span>
     </div>
   )
 }
