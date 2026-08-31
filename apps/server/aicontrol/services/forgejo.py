@@ -42,6 +42,29 @@ class ForgejoClient:
             raise ForgejoError(response.status_code, response.text[:200])
         return response.json()
 
+    async def fetch_attachment(self, attachment_id: str, *,
+                               max_bytes: int) -> tuple[bytes, str]:
+        """Download one issue attachment, returning (body, content_type).
+
+        Takes only the attachment id, never a caller-supplied URL: the request target
+        is built from our own configured base URL, so this cannot be turned into an
+        SSRF primitive.
+        """
+        response = await self._client.get(
+            f"{self.base_url}/attachments/{attachment_id}",
+            headers={"Authorization": f"token {self._token}"},
+            follow_redirects=False,
+        )
+        if response.status_code in (301, 302, 303, 307, 308):
+            # Forgejo redirects unauthenticated requests to its login page.
+            raise ForgejoError(401, "not authorised to read this attachment")
+        if response.status_code >= 400:
+            raise ForgejoError(response.status_code, response.text[:200])
+        body = response.content
+        if len(body) > max_bytes:
+            raise ForgejoError(413, "attachment is too large to proxy")
+        return body, (response.headers.get("content-type") or "").split(";")[0].strip()
+
     async def _post(self, path: str, payload: dict[str, Any]) -> Any:
         response = await self._client.post(path, json=payload)
         if response.status_code >= 400:

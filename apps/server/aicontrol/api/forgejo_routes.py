@@ -148,3 +148,46 @@ async def forgejo_repos(request: Request,
     except ForgejoError as exc:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc)) from exc
 
+
+@router.get("/forgejo/attachment/{attachment_id}")
+async def forgejo_attachment(request: Request,
+                             attachment_id: str = PathParam(...),
+                             app: AppState = Depends(state)) -> Response:
+    """Proxy a Forgejo issue attachment so images render in the browser.
+
+    Forgejo serves `/attachments/<uuid>` only to authenticated callers, and the API
+    token lives on this server and must never reach the browser -- so the image cannot
+    be loaded directly by an <img> tag. This fetches it with the token and streams the
+    bytes back, which keeps the token server-side and the image visible.
+    """
+    app.auth.require_session(request)
+    if not _ATTACHMENT_ID.match(attachment_id):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "invalid attachment id")
+
+    client = app.forgejo_or_503()
+    try:
+        body, content_type = await client.fetch_attachment(
+            attachment_id, max_bytes=MAX_ATTACHMENT_BYTES)
+    except ForgejoError as exc:
+        raise HTTPException(
+            status.HTTP_502_BAD_GATEWAY if exc.status >= 500 else exc.status,
+            str(exc)) from exc
+
+    if content_type not in _PROXYABLE_TYPES:
+        raise HTTPException(
+            status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            f"{content_type or 'this attachment'} is not an image, so it is not "
+            "proxied. Open it in Forgejo instead.")
+
+    return Response(
+        content=body,
+        media_type=content_type,
+        headers={
+            # Attachments are immutable, so let the iPad keep them.
+            "Cache-Control": "private, max-age=86400",
+            "Content-Disposition": "inline",
+            "X-Content-Type-Options": "nosniff",
+            # Belt and braces: even if the type check were bypassed, nothing here runs.
+            "Content-Security-Policy": "default-src 'none'; sandbox",
+        },
+    )
