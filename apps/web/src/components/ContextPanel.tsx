@@ -39,6 +39,7 @@ export function ContextPanel({ session }: { session: Session }) {
         {meta.codexProjectName && <Row k="Codex project" v={meta.codexProjectName} />}
         {meta.approvalPolicy && <Row k="Approvals" v={String(meta.approvalPolicy)} />}
         {meta.sandboxPolicy && <Row k="Sandbox" v={String(meta.sandboxPolicy)} />}
+        {meta.permissionMode && <Row k="Permissions" v={String(meta.permissionMode)} />}
         <Row k="Started" v={relativeTime(session.createdAt) + ' ago'} />
         <Row k="Last activity" v={relativeTime(session.lastActivity) + ' ago'} />
         {session.forgejoIssue && <Row k="Issue" v={`#${session.forgejoIssue}`} />}

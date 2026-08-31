@@ -33,7 +33,12 @@ class CreateSessionBody(BaseModel):
     issue: Optional[int] = None
     approval_policy: Optional[str] = None
     permission_mode: Optional[str] = None
-
+    sandbox: Optional[str] = None
+    #: Run the agent without approval prompts, using each tool's own documented
+    #: unattended mode -- Codex `approvalPolicy: never` with a full-access sandbox,
+    #: Claude Code `--permission-mode bypassPermissions`. Never a default: it must be
+    #: chosen per session, and every use is audited.
+    bypass_permissions: bool = False
 
 
 class ReviewCommentBody(BaseModel):
@@ -378,9 +383,21 @@ async def create_session(request: Request, body: CreateSessionBody,
 
     kwargs: dict[str, Any] = {"cwd": cwd, "prompt": prompt, "model": body.model}
     if body.provider == "claude_code":
-        kwargs["permission_mode"] = body.permission_mode or "default"
+        kwargs["permission_mode"] = (
+            "bypassPermissions" if body.bypass_permissions
+            else (body.permission_mode or "default"))
     else:
-        kwargs["approval_policy"] = body.approval_policy
+        # Codex needs both halves: approvals off, and a sandbox that does not veto what
+        # the approvals would have gated. Setting only one produces an agent that still
+        # stalls, which is worse than not offering the mode.
+        kwargs["approval_policy"] = (
+            "never" if body.bypass_permissions else body.approval_policy)
+        kwargs["sandbox"] = (
+            "danger-full-access" if body.bypass_permissions else body.sandbox)
+
+    if body.bypass_permissions:
+        log.warning("starting %s in %s without approval prompts",
+                    body.provider, body.repository)
 
     try:
         session = await provider.create_session(**kwargs)
@@ -397,7 +414,15 @@ async def create_session(request: Request, body: CreateSessionBody,
                             session.id, body.issue)
     app.db.audit("session_created", session_id=session.id, repository=body.repository,
                  detail={"provider": body.provider, "issue": body.issue,
-                         "branchMode": body.branch_mode})
+                         "branchMode": body.branch_mode,
+                         "bypassPermissions": body.bypass_permissions})
+    if body.bypass_permissions:
+        # Recorded separately so it is greppable in the audit log on its own.
+        app.db.audit("permissions_bypassed", session_id=session.id,
+                     repository=body.repository,
+                     detail={"provider": body.provider, "cwd": cwd})
+        app.db.add_activity(session.id, "bypass",
+                            "Started without approval prompts")
     app.bus.publish("session.created", sessionId=session.id,
                     session=session.to_dict())
     return {"ok": True, "session": session.to_dict()}

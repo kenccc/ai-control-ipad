@@ -23,6 +23,7 @@ export function NewAgent({ issue, onClose, onCreated }: Props) {
   const [model, setModel] = useState('')
   const [approval, setApproval] = useState('on-request')
   const [permissionMode, setPermissionMode] = useState('default')
+  const [bypass, setBypass] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -50,6 +51,7 @@ export function NewAgent({ issue, onClose, onCreated }: Props) {
         issue: issue ?? null,
         approval_policy: provider === 'claude_code' ? null : approval,
         permission_mode: provider === 'claude_code' ? permissionMode : null,
+        bypass_permissions: bypass,
       })
       await refresh()
       notify({ kind: 'info', text: 'Agent started' })
@@ -133,17 +135,42 @@ export function NewAgent({ issue, onClose, onCreated }: Props) {
           <label>{provider === 'claude_code' ? 'Permission mode' : 'Approval policy'}</label>
           {provider === 'claude_code' ? (
             <div className="choices">
-              {['default', 'plan', 'acceptEdits'].map((mode) => (
-                <button key={mode} className="choice" aria-pressed={permissionMode === mode}
+              {['default', 'plan', 'acceptEdits', 'dontAsk'].map((mode) => (
+                <button key={mode} className="choice" disabled={bypass}
+                        aria-pressed={!bypass && permissionMode === mode}
                         onClick={() => setPermissionMode(mode)}>{mode}</button>
               ))}
             </div>
           ) : (
             <div className="choices">
-              {['untrusted', 'on-request', 'on-failure', 'never'].map((policy) => (
-                <button key={policy} className="choice" aria-pressed={approval === policy}
+              {['untrusted', 'on-request', 'never'].map((policy) => (
+                <button key={policy} className="choice" disabled={bypass}
+                        aria-pressed={!bypass && approval === policy}
                         onClick={() => setApproval(policy)}>{policy}</button>
               ))}
+            </div>
+          )}
+        </div>
+
+        <div className="field-group">
+          <label>Unattended</label>
+          <div className="choices">
+            <button className="choice danger" aria-pressed={bypass}
+                    onClick={() => setBypass((v) => !v)}>
+              {bypass ? '✓ ' : ''}Bypass permissions
+            </button>
+          </div>
+          {bypass && (
+            <div className="danger-note">
+              The agent runs with no approval prompts and full disk and network access
+              inside {repository || 'the repository'} —{' '}
+              {provider === 'claude_code'
+                ? <code className="mono">--permission-mode bypassPermissions</code>
+                : <code className="mono">approvalPolicy: never</code>}
+              {provider !== 'claude_code' && <> with a <code className="mono">danger-full-access</code> sandbox</>}.
+              It will not stop to ask before running commands or editing files.
+              Use a new worktree unless you mean it to touch your working tree.
+              Every run started this way is recorded in the audit log.
             </div>
           )}
         </div>

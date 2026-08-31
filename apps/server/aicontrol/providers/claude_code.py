@@ -443,12 +443,21 @@ class ClaudeCodeProvider(AgentProvider):
             stdin=asyncio.subprocess.DEVNULL,
         )
 
+    #: Modes `claude --permission-mode` accepts. "default" is our own name for
+    #: "leave it alone", so it is not passed through.
+    PERMISSION_MODES = frozenset({
+        "acceptEdits", "auto", "bypassPermissions", "manual", "dontAsk", "plan",
+    })
+
     async def create_session(self, *, cwd: str, prompt: str,
                              model: Optional[str] = None,
                              permission_mode: str = "default",
                              **_: Any) -> AgentSession:
-        argv = ["--print", "--output-format", "stream-json", "--verbose",
-                "--permission-mode", permission_mode]
+        argv = ["--print", "--output-format", "stream-json", "--verbose"]
+        if permission_mode in self.PERMISSION_MODES:
+            argv += ["--permission-mode", permission_mode]
+        elif permission_mode not in ("default", "", None):
+            raise ProviderError(f"unknown permission mode {permission_mode!r}")
         if model:
             argv += ["--model", model]
         argv.append(prompt)

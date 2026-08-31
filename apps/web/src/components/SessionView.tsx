@@ -11,6 +11,16 @@ import { Dot, DiffBadge, SourceTag, relativeTime } from './common'
 
 type Tab = 'agent' | 'terminal' | 'changes' | 'issue' | 'git'
 
+/** True when the agent was started in a mode that never stops to ask. Read from what
+ *  the agent itself recorded, not from what we asked for, so a session started outside
+ *  AI Control is labelled just as accurately. */
+function isUnattended(session: Session): boolean {
+  const meta = session.metadata as Record<string, unknown>
+  return meta.approvalPolicy === 'never'
+    || meta.sandboxPolicy === 'danger-full-access'
+    || meta.permissionMode === 'bypassPermissions'
+}
+
 export function SessionView({ session }: { session: Session }) {
   const { notify, refresh } = useStore()
   const [tab, setTab] = useState<Tab>('agent')
@@ -38,6 +48,11 @@ export function SessionView({ session }: { session: Session }) {
       <div className="session-head">
         <div className="row" style={{ marginBottom: 4 }}>
           <SourceTag session={session} />
+          {isUnattended(session) && (
+            <span className="bypass-badge" title="Running without approval prompts">
+              no approvals
+            </span>
+          )}
           <Dot status={session.status} />
           <span className="dim" style={{ fontSize: 12 }}>{session.currentAction ?? session.status}</span>
           <span className="faint" style={{ fontSize: 12 }}>· {relativeTime(session.lastActivity)} ago</span>

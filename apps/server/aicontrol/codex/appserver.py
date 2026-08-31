@@ -314,12 +314,16 @@ class CodexAppServer:
         return await self.request("thread/resume", params)
 
     async def start_thread(self, *, cwd: str, model: Optional[str] = None,
-                           approval_policy: Optional[str] = None) -> dict[str, Any]:
+                           approval_policy: Optional[str] = None,
+                           sandbox: Optional[str] = None) -> dict[str, Any]:
         params: dict[str, Any] = {"cwd": cwd}
         if model:
             params["model"] = model
         if approval_policy:
             params["approvalPolicy"] = approval_policy
+        if sandbox:
+            # SandboxMode: read-only | workspace-write | danger-full-access
+            params["sandbox"] = sandbox
         return await self.request("thread/start", params)
 
     async def start_turn(self, thread_id: str, text: str, *,

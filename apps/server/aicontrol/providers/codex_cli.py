@@ -57,10 +57,12 @@ class CodexCLIProvider(CodexRolloutProvider):
     async def create_session(self, *, cwd: str, prompt: Optional[str] = None,
                              model: Optional[str] = None,
                              approval_policy: Optional[str] = None,
+                             sandbox: Optional[str] = None,
                              **_: Any) -> AgentSession:
         server = await self.app_server()
         result = await server.start_thread(cwd=cwd, model=model,
-                                           approval_policy=approval_policy)
+                                           approval_policy=approval_policy,
+                                           sandbox=sandbox)
         thread = result.get("thread") or result
         thread_id = thread.get("id") or thread.get("threadId")
         if not thread_id:
