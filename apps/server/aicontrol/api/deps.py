@@ -35,6 +35,9 @@ class AppState:
     codex_cli: CodexCLIProvider
     claude_code: ClaudeCodeProvider
     forgejo: Optional[ForgejoClient] = None
+    #: The address actually bound, which differs from config.host when that is
+    #: `tailscale`. Logged and surfaced in diagnostics so it is never a guess.
+    bound_host: Optional[str] = None
 
     def repo_or_404(self, name: str):
         repo = self.config.repositories.get(name)

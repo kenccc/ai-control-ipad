@@ -91,6 +91,25 @@ class Config:
     worktree_root: Path = WORKTREE_ROOT
     db_path: Path = DB_PATH
 
+    def resolve_host(self) -> str:
+        """Turn `host: tailscale` into this machine's tailnet address.
+
+        Binding the Tailscale interface specifically means the service is reachable
+        from your iPad and not from whatever café network the Mac is also on. If
+        Tailscale never comes up we refuse to start rather than silently falling back
+        to 0.0.0.0, which would be a security downgrade nobody asked for.
+        """
+        if self.host != "tailscale":
+            return self.host
+        from .services.tailscale import wait_for_ipv4
+        address = wait_for_ipv4()
+        if address is None:
+            raise RuntimeError(
+                "config sets host: tailscale, but Tailscale did not come up. "
+                "Run `tailscale status` to check it, or set an explicit host in "
+                "~/.ai-control/config.yaml.")
+        return address
+
     def repo_for_path(self, path: str | Path) -> Optional[RepoConfig]:
         """Which allowlisted repository contains `path`, if any."""
         try:

@@ -77,7 +77,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app_state.config.worktree_root.mkdir(parents=True, exist_ok=True)
     await app_state.registry.start()
     log.info("AI Control started on %s:%s with %d allowlisted repositories",
-             app_state.config.host, app_state.config.port,
+             app_state.bound_host or app_state.config.host, app_state.config.port,
              len(app_state.config.repositories))
     try:
         yield
@@ -191,8 +191,12 @@ def main() -> None:
     import uvicorn
 
     config = load_config()
-    uvicorn.run(create_app(config), host=config.host, port=config.port,
-                log_config=None)
+    host = config.resolve_host()
+    app = create_app(config)
+    app.state.app_state.bound_host = host
+    if host != config.host:
+        log.info("resolved %s to the tailnet address %s", config.host, host)
+    uvicorn.run(app, host=host, port=config.port, log_config=None)
 
 
 if __name__ == "__main__":

@@ -13,6 +13,7 @@ from fastapi import APIRouter, Depends, Query, Request
 
 from ..codex.appserver import daemon_status, discover_codex_binaries
 from ..models import Source
+from ..services import tailscale as tailscale_service
 from .deps import AppState, state
 
 router = APIRouter(prefix="/api", tags=["diagnostics"])
@@ -51,6 +52,7 @@ async def diagnostics(request: Request,
         "claudeCode": health["providers"].get("claude_code", {}),
         "sharedDaemon": daemon,
         "forgejo": await _forgejo_status(app),
+        "tailscale": tailscale_service.status(),
         "git": {"detected": shutil.which("git") is not None},
         "sessionCounts": health["sessionCounts"],
         "activeSessions": health["activeSessions"],
