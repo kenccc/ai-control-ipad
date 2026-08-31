@@ -3,6 +3,7 @@ import { api, ApiError } from '../lib/api'
 import type { ActivityEntry, Issue, PullRequest, Repository, Session } from '../lib/types'
 import type { View } from './Nav'
 import { Dot, Empty, SourceTag, clockTime, relativeTime } from './common'
+import { Markdown } from './Markdown'
 
 function useAsync<T>(load: () => Promise<T>, deps: unknown[]) {
   const [data, setData] = useState<T | null>(null)
@@ -114,9 +115,7 @@ export function PullView({ number, onNavigate }:
               ))}
             </div>
           )}
-          <div style={{ whiteSpace: 'pre-wrap', color: 'var(--text-dim)', lineHeight: 1.6 }}>
-            {data.pull.body}
-          </div>
+          <Markdown className="dim">{data.pull.body ?? ''}</Markdown>
           <h3 style={{ fontSize: 10, letterSpacing: '.08em', textTransform: 'uppercase',
                        color: 'var(--text-faint)', marginTop: 22 }}>Files</h3>
           {data.files?.map((file: any) => (

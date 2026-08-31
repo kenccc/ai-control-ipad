@@ -3,6 +3,8 @@ import { api, ApiError } from '../lib/api'
 import { useStore } from '../lib/store'
 import type { Issue, Session } from '../lib/types'
 import { Empty } from './common'
+import { Markdown } from './Markdown'
+import { Lightbox } from './Lightbox'
 
 export function IssueTab({ session }: { session: Session }) {
   const { notify, refresh } = useStore()
@@ -11,6 +13,7 @@ export function IssueTab({ session }: { session: Session }) {
   const [error, setError] = useState<string | null>(null)
   const [linkDraft, setLinkDraft] = useState('')
   const [commentDraft, setCommentDraft] = useState('')
+  const [zoomed, setZoomed] = useState<{ src: string; alt: string } | null>(null)
 
   useEffect(() => {
     setIssue(null); setError(null)
@@ -72,9 +75,9 @@ export function IssueTab({ session }: { session: Session }) {
           {issue.labels?.map((l) => <span key={l.name} className="label-chip">{l.name}</span>)}
         </div>
         <h2 style={{ margin: '0 0 12px', fontSize: 16 }}>{issue.title}</h2>
-        <div style={{ whiteSpace: 'pre-wrap', color: 'var(--text-dim)', lineHeight: 1.65 }}>
-          {issue.body}
-        </div>
+        <Markdown className="dim" onImageClick={(src, alt) => setZoomed({ src, alt })}>
+          {issue.body ?? ''}
+        </Markdown>
 
         {comments.length > 0 && (
           <div style={{ marginTop: 22 }}>
@@ -85,7 +88,9 @@ export function IssueTab({ session }: { session: Session }) {
                 <div className="faint" style={{ fontSize: 11.5, marginBottom: 4 }}>
                   {c.user?.login}
                 </div>
-                <div style={{ whiteSpace: 'pre-wrap', color: 'var(--text-dim)' }}>{c.body}</div>
+                <Markdown className="dim" onImageClick={(src, alt) => setZoomed({ src, alt })}>
+                  {c.body ?? ''}
+                </Markdown>
               </div>
             ))}
           </div>
@@ -99,6 +104,8 @@ export function IssueTab({ session }: { session: Session }) {
           <button className="btn" onClick={comment} disabled={!commentDraft.trim()}>Comment</button>
         </div>
       </div>
+      {zoomed && <Lightbox src={zoomed.src} alt={zoomed.alt}
+                           onClose={() => setZoomed(null)} />}
     </div>
   )
 }

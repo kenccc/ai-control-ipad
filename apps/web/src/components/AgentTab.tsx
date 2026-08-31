@@ -3,6 +3,8 @@ import { api, ApiError } from '../lib/api'
 import { useStore } from '../lib/store'
 import type { Session, SessionEvent } from '../lib/types'
 import { Empty, clockTime } from './common'
+import { Markdown } from './Markdown'
+import { Lightbox } from './Lightbox'
 
 /** Transcript plus composer. The composer only exists when the session can actually
  *  receive a message; otherwise the provider's reason is shown in its place. */
@@ -13,6 +15,7 @@ export function AgentTab({ session }: { session: Session }) {
   const [draft, setDraft] = useState('')
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [zoomed, setZoomed] = useState<{ src: string; alt: string } | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const pinnedRef = useRef(true)
   const scrollerRef = useRef<HTMLDivElement>(null)
@@ -82,7 +85,10 @@ export function AgentTab({ session }: { session: Session }) {
                  hint="This session has not produced any user-visible messages." />
         )}
         <div className="events">
-          {events.map((event, index) => <EventRow key={index} event={event} />)}
+          {events.map((event, index) => (
+            <EventRow key={index} event={event}
+                      onImageClick={(src, alt) => setZoomed({ src, alt })} />
+          ))}
         </div>
         <div ref={bottomRef} />
       </div>
@@ -115,11 +121,16 @@ export function AgentTab({ session }: { session: Session }) {
           </div>
         )}
       </div>
+      {zoomed && <Lightbox src={zoomed.src} alt={zoomed.alt}
+                           onClose={() => setZoomed(null)} />}
     </div>
   )
 }
 
-function EventRow({ event }: { event: SessionEvent }) {
+function EventRow({ event, onImageClick }: {
+  event: SessionEvent
+  onImageClick: (src: string, alt: string) => void
+}) {
   if (event.kind === 'turn_start' || event.kind === 'turn_end' || event.kind === 'turn_aborted') {
     const label = event.kind === 'turn_start' ? 'Turn started'
       : event.kind === 'turn_end' ? 'Turn complete' : 'Turn interrupted'
@@ -135,6 +146,8 @@ function EventRow({ event }: { event: SessionEvent }) {
     : event.kind === 'file_edit' ? '± '
     : event.kind === 'tool' ? '⚙ ' : ''
 
+  const isProse = event.kind === 'agent_message' || event.kind === 'user_message'
+
   return (
     <div className={`event ${event.kind}`}>
       <div className="gutter">{clockTime(event.timestamp)}</div>
@@ -144,7 +157,9 @@ function EventRow({ event }: { event: SessionEvent }) {
             Permission requested
           </div>
         )}
-        {prefix}{event.text}
+        {isProse && event.text
+          ? <Markdown onImageClick={onImageClick}>{event.text}</Markdown>
+          : <>{prefix}{event.text}</>}
         {event.kind === 'command' && typeof event.detail?.exitCode === 'number'
           && event.detail.exitCode !== 0 && (
           <span style={{ color: 'var(--fail)' }}>  → exit {String(event.detail.exitCode)}</span>

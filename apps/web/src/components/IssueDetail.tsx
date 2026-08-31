@@ -4,6 +4,8 @@ import { useStore } from '../lib/store'
 import type { Issue, Session } from '../lib/types'
 import type { View } from './Nav'
 import { Dot, SourceTag } from './common'
+import { Markdown } from './Markdown'
+import { Lightbox } from './Lightbox'
 
 export function IssueDetail({ number, onNavigate, onStartAgent }: {
   number: number; onNavigate: (v: View) => void; onStartAgent: () => void
@@ -14,6 +16,7 @@ export function IssueDetail({ number, onNavigate, onStartAgent }: {
   const [agents, setAgents] = useState<Session[]>([])
   const [error, setError] = useState<string | null>(null)
   const [draft, setDraft] = useState('')
+  const [zoomed, setZoomed] = useState<{ src: string; alt: string } | null>(null)
 
   const load = () => api.issue(number)
     .then((d) => { setIssue(d.issue); setComments(d.comments); setAgents(d.agents) })
@@ -65,14 +68,16 @@ export function IssueDetail({ number, onNavigate, onStartAgent }: {
           </div>
         )}
 
-        <div style={{ whiteSpace: 'pre-wrap', color: 'var(--text-dim)', lineHeight: 1.65 }}>
-          {issue.body}
-        </div>
+        <Markdown className="dim" onImageClick={(src, alt) => setZoomed({ src, alt })}>
+          {issue.body ?? ''}
+        </Markdown>
 
         {comments.map((c) => (
           <div key={c.id} style={{ borderTop: '1px solid var(--border)', padding: '12px 0', marginTop: 12 }}>
             <div className="faint" style={{ fontSize: 11.5, marginBottom: 4 }}>{c.user?.login}</div>
-            <div style={{ whiteSpace: 'pre-wrap', color: 'var(--text-dim)' }}>{c.body}</div>
+            <Markdown className="dim" onImageClick={(src, alt) => setZoomed({ src, alt })}>
+              {c.body ?? ''}
+            </Markdown>
           </div>
         ))}
       </div>
@@ -83,6 +88,8 @@ export function IssueDetail({ number, onNavigate, onStartAgent }: {
           <button className="btn" onClick={comment} disabled={!draft.trim()}>Comment</button>
         </div>
       </div>
+      {zoomed && <Lightbox src={zoomed.src} alt={zoomed.alt}
+                           onClose={() => setZoomed(null)} />}
     </div>
   )
 }
