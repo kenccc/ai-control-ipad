@@ -617,7 +617,8 @@ button, input, textarea, select { font: inherit; color: inherit; }
 .meters { display: flex; flex-direction: column; gap: 7px; }
 
 .meter-row { display: flex; align-items: center; gap: 9px; font-size: 12px; }
-.meter-label { width: 66px; flex: none; color: var(--text-dim); }
+/* Wide enough for a qualified window name like "Weekly · Fable". */
+.meter-label { width: 104px; flex: none; color: var(--text-dim); }
 .meter {
   flex: 1; min-width: 60px; height: 6px; border-radius: 3px;
   background: var(--bg-panel); border: 1px solid var(--border); overflow: hidden;

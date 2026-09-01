@@ -424,40 +424,6 @@ async def test_codex_usage_survives_a_missing_totals_endpoint():
     assert usage.error is None
 
 
-def test_claude_usage_says_plainly_that_there_is_no_live_quota(monkeypatch, tmp_path):
-    """Claude Code has no quota API; the UI must not imply otherwise."""
-    import json as _json
-    import subprocess as _subprocess
-    from aicontrol.services import usage as usage_mod
-
-    monkeypatch.setattr(usage_mod, "STATS_CACHE", tmp_path / "stats.json")
-    monkeypatch.setattr(usage_mod, "PROJECTS_DIR", tmp_path / "projects")
-    (tmp_path / "stats.json").write_text(_json.dumps({
-        "modelUsage": {"claude-opus-5": {"inputTokens": 10, "outputTokens": 5,
-                                         "cacheReadInputTokens": 1,
-                                         "cacheCreationInputTokens": 4}},
-        "totalSessions": 3, "totalMessages": 40, "lastComputedDate": "2026-08-19",
-        "dailyModelTokens": [{"date": "2026-08-19", "tokensByModel": {"a": 7}}],
-    }))
-    monkeypatch.setattr(
-        "aicontrol.providers.claude_code.ClaudeCodeProvider.binary",
-        staticmethod(lambda: "/usr/bin/true"))
-    monkeypatch.setattr(usage_mod.subprocess, "run",
-                        lambda *a, **k: _subprocess.CompletedProcess(
-                            a[0], 0, _json.dumps({"loggedIn": True,
-                                                  "subscriptionType": "max",
-                                                  "email": "me@example.com"}), ""))
-
-    usage = UsageServiceStub()._claude_sync()
-    assert usage.plan == "max"
-    assert usage.available is True
-    # No fabricated windows, and an explicit reason.
-    assert usage.windows == []
-    assert "no live quota API" in usage.note
-    assert usage.totals["lifetimeTokens"] == 20
-    assert usage.totals["computedAt"] == "2026-08-19"
-
-
 class UsageServiceStub:
     """UsageService without a Codex provider, for the Claude-only path."""
 
@@ -487,3 +453,144 @@ def test_claude_last_limit_event_is_found_and_dated(monkeypatch, tmp_path):
     assert event["kind"] == "weekly"
     assert "weekly limit" in event["text"]
     assert event["timestamp"].startswith("2026-08-22")
+
+
+REAL_USAGE_OUTPUT = """You are currently using your subscription to power your Claude Code usage
+
+Current session: 37% used \u00b7 resets Sep 1 at 4:59pm (Europe/Prague)
+Current week (all models): 39% used \u00b7 resets Sep 4 at 12:59am (Europe/Prague)
+Current week (Fable): 21% used \u00b7 resets Sep 4 at 1am (Europe/Prague)
+
+What's contributing to your limits usage?
+Approximate, based on local sessions on this machine.
+
+Last 24h \u00b7 301 requests \u00b7 13 sessions
+  90% of your usage was at >150k context
+Last 7d \u00b7 1,477 requests \u00b7 25 sessions
+"""
+
+
+def test_claude_usage_report_is_parsed():
+    """Parses the real output of `claude -p "/usage"`, verbatim."""
+    from aicontrol.services.usage import parse_usage_report
+    windows, activity = parse_usage_report(REAL_USAGE_OUTPUT)
+
+    assert [(w.label, w.used_percent) for w in windows] == [
+        ("Session", 37.0), ("Weekly", 39.0), ("Weekly \u00b7 Fable", 21.0)]
+    # "all models" is the default and adds nothing to the label; a real model name does.
+    assert activity["last24H"] == {"requests": 301, "sessions": 13}
+    assert activity["last7D"] == {"requests": 1477, "sessions": 25}
+    assert all(w.resets_at for w in windows)
+
+
+def test_midnight_hour_conversion():
+    """Claude writes the same instant as `1am` or `12:59am` on different runs."""
+    from aicontrol.services.usage import parse_reset
+    one_am = parse_reset("Sep 4 at 1am (Europe/Prague)")
+    twelve_fifty_nine = parse_reset("Sep 4 at 12:59am (Europe/Prague)")
+    assert one_am - twelve_fifty_nine == 60      # 12:59am is a minute before 1am
+    noon = parse_reset("Sep 4 at 12pm (Europe/Prague)")
+    midnight = parse_reset("Sep 4 at 12am (Europe/Prague)")
+    assert noon - midnight == 12 * 3600
+
+
+def test_reset_without_a_date_rolls_to_the_next_occurrence():
+    import time as _time
+    from aicontrol.services.usage import parse_reset
+    now = _time.time()
+    # A time earlier today must mean tomorrow, not a timestamp in the past.
+    parsed = parse_reset("1am (Europe/Prague)", now=now)
+    assert parsed is not None and parsed > now
+
+
+def test_unparseable_reset_returns_none_rather_than_a_wrong_time():
+    from aicontrol.services.usage import parse_reset
+    assert parse_reset("whenever the vibes are right") is None
+    assert parse_reset("") is None
+
+
+def test_window_labels_are_humanised():
+    from aicontrol.services.usage import _clean_window_label
+    assert _clean_window_label("Current session") == "Session"
+    assert _clean_window_label("Current week (all models)") == "Weekly"
+    assert _clean_window_label("Current week (Fable)") == "Weekly \u00b7 Fable"
+
+
+def test_claude_falls_back_when_usage_cannot_be_read(monkeypatch, tmp_path):
+    """A broken /usage must degrade to real fallback data, never to a fake percentage."""
+    import json as _json
+    import subprocess as _subprocess
+    from aicontrol.services import usage as usage_mod
+
+    monkeypatch.setattr(usage_mod, "STATS_CACHE", tmp_path / "stats.json")
+    monkeypatch.setattr(usage_mod, "PROJECTS_DIR", tmp_path / "projects")
+    (tmp_path / "stats.json").write_text(_json.dumps({
+        "modelUsage": {"m": {"inputTokens": 10, "outputTokens": 5}},
+        "totalSessions": 3, "lastComputedDate": "2026-08-19"}))
+    monkeypatch.setattr(
+        "aicontrol.providers.claude_code.ClaudeCodeProvider.binary",
+        staticmethod(lambda: "/usr/bin/true"))
+
+    def fake_run(cmd, *a, **k):
+        if "auth" in cmd:
+            return _subprocess.CompletedProcess(
+                cmd, 0, _json.dumps({"loggedIn": True, "subscriptionType": "max"}), "")
+        return _subprocess.CompletedProcess(cmd, 1, "", "usage unavailable")
+
+    monkeypatch.setattr(usage_mod.subprocess, "run", fake_run)
+
+    usage = UsageServiceStub()._claude_sync()
+    assert usage.plan == "max"
+    assert usage.windows == []
+    assert "Could not read live limits" in usage.note
+    assert "usage unavailable" in usage.note
+    assert usage.totals["lifetimeTokens"] == 15
+
+
+def test_claude_live_windows_do_not_leave_sessions_behind(monkeypatch):
+    """Regression guard: without --no-session-persistence every poll litters
+    ~/.claude/projects with an empty session that then shows on the dashboard."""
+    import subprocess as _subprocess
+    from aicontrol.services import usage as usage_mod
+
+    seen: dict = {}
+
+    def fake_run(cmd, *a, **k):
+        seen["cmd"] = cmd
+        return _subprocess.CompletedProcess(cmd, 0, REAL_USAGE_OUTPUT, "")
+
+    monkeypatch.setattr(usage_mod.subprocess, "run", fake_run)
+    windows, activity, error = usage_mod.UsageService._claude_live_windows("claude")
+
+    assert error is None and len(windows) == 3
+    assert "--no-session-persistence" in seen["cmd"]
+    assert "/usage" in seen["cmd"]
+
+
+def test_claude_subprocess_env_sets_user(monkeypatch):
+    """Regression guard for a silent failure.
+
+    Without USER, `claude -p "/usage"` prints a cost summary instead of the usage
+    report -- exit code 0, nothing on stderr. A LaunchAgent inherits no USER, so the
+    dashboard showed no Claude limits at all while looking perfectly healthy.
+    """
+    from pathlib import Path
+    from aicontrol.services.usage import UsageService
+
+    monkeypatch.delenv("USER", raising=False)
+    monkeypatch.delenv("LOGNAME", raising=False)
+    monkeypatch.setenv("PATH", "/usr/bin:/bin")
+
+    env = UsageService._subprocess_env()
+    assert env["USER"] == Path.home().name
+    assert env["LOGNAME"] == env["USER"]
+    assert env["HOME"] == str(Path.home())
+    assert env["TMPDIR"]
+    # ~/.local/bin is where `claude` installs itself, and launchd's PATH omits it.
+    assert str(Path.home() / ".local" / "bin") in env["PATH"].split(":")
+
+
+def test_claude_subprocess_env_keeps_an_existing_user(monkeypatch):
+    from aicontrol.services.usage import UsageService
+    monkeypatch.setenv("USER", "someone-else")
+    assert UsageService._subprocess_env()["USER"] == "someone-else"

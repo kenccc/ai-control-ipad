@@ -20,7 +20,16 @@
     <key>PYTHONPATH</key>
     <string>__ROOT__/apps/server</string>
     <key>PATH</key>
-    <string>/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <string>__HOME__/.local/bin:/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <!-- A LaunchAgent gets almost no environment. USER in particular is load-bearing:
+         without it `claude -p "/usage"` prints a cost summary instead of the usage
+         report, with no error and a zero exit code. -->
+    <key>HOME</key>
+    <string>__HOME__</string>
+    <key>USER</key>
+    <string>__USER__</string>
+    <key>LOGNAME</key>
+    <string>__USER__</string>
     <key>AICONTROL_LOG_FORMAT</key>
     <string>json</string>
   </dict>
