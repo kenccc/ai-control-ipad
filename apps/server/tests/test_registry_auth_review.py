@@ -336,3 +336,154 @@ def test_host_tailscale_refuses_to_start_when_tailscale_is_down(monkeypatch):
     with pytest.raises(RuntimeError) as exc:
         Config(host="tailscale").resolve_host()
     assert "Tailscale did not come up" in str(exc.value)
+
+
+# --------------------------------------------------------------------------- usage
+
+def test_window_labels_read_naturally():
+    from aicontrol.services.usage import _window_label
+    assert _window_label(300, "x") == "5-hour"
+    assert _window_label(10080, "x") == "Weekly"
+    assert _window_label(1440, "x") == "Daily"
+    assert _window_label(None, "Primary") == "Primary"
+
+
+@pytest.mark.asyncio
+async def test_codex_usage_maps_the_rate_limit_snapshot():
+    from aicontrol.services.usage import UsageService
+
+    class FakeServer:
+        async def request(self, method, params=None, timeout=None):
+            if method == "account/read":
+                return {"account": {"type": "chatgpt", "email": "a@b.c",
+                                    "planType": "plus"}}
+            if method == "account/rateLimits/read":
+                return {"rateLimits": {
+                    "primary": {"usedPercent": 42, "windowDurationMins": 300,
+                                "resetsAt": 1788257980},
+                    "secondary": {"usedPercent": 7, "windowDurationMins": 10080,
+                                  "resetsAt": 1788781054},
+                    "credits": {"hasCredits": False, "unlimited": False, "balance": "0"},
+                    "planType": "plus", "rateLimitReachedType": None},
+                    "rateLimitResetCredits": {"availableCount": 1}}
+            if method == "account/usage/read":
+                return {"summary": {"lifetimeTokens": 123}}
+            raise AssertionError(method)
+
+    class FakeProvider:
+        async def app_server(self):
+            return FakeServer()
+
+    usage = await UsageService(FakeProvider())._codex(force=True)
+    assert usage.available is True
+    assert usage.plan == "plus"
+    assert [(w.label, w.used_percent) for w in usage.windows] == [
+        ("5-hour", 42.0), ("Weekly", 7.0)]
+    assert usage.windows[0].resets_at == 1788257980
+    assert usage.credits["resetCreditsAvailable"] == 1
+    assert usage.totals["lifetimeTokens"] == 123
+    assert usage.error is None
+
+
+@pytest.mark.asyncio
+async def test_codex_usage_reports_the_error_instead_of_inventing_numbers():
+    from aicontrol.services.usage import UsageService
+
+    class BrokenProvider:
+        async def app_server(self):
+            raise ConnectionError("app-server exited")
+
+    usage = await UsageService(BrokenProvider())._codex(force=True)
+    assert usage.available is False
+    assert usage.windows == []
+    assert "app-server exited" in usage.error
+
+
+@pytest.mark.asyncio
+async def test_codex_usage_survives_a_missing_totals_endpoint():
+    """Older cores lack account/usage/read; that must not lose the rate limits."""
+    from aicontrol.services.usage import UsageService
+
+    class PartialServer:
+        async def request(self, method, params=None, timeout=None):
+            if method == "account/read":
+                return {"account": {"planType": "pro", "email": None}}
+            if method == "account/rateLimits/read":
+                return {"rateLimits": {"primary": {"usedPercent": 90,
+                                                   "windowDurationMins": 300}}}
+            raise RuntimeError("method not found")
+
+    class PartialProvider:
+        async def app_server(self):
+            return PartialServer()
+
+    usage = await UsageService(PartialProvider())._codex(force=True)
+    assert usage.plan == "pro"
+    assert usage.windows[0].used_percent == 90.0
+    assert usage.totals is None
+    assert usage.error is None
+
+
+def test_claude_usage_says_plainly_that_there_is_no_live_quota(monkeypatch, tmp_path):
+    """Claude Code has no quota API; the UI must not imply otherwise."""
+    import json as _json
+    import subprocess as _subprocess
+    from aicontrol.services import usage as usage_mod
+
+    monkeypatch.setattr(usage_mod, "STATS_CACHE", tmp_path / "stats.json")
+    monkeypatch.setattr(usage_mod, "PROJECTS_DIR", tmp_path / "projects")
+    (tmp_path / "stats.json").write_text(_json.dumps({
+        "modelUsage": {"claude-opus-5": {"inputTokens": 10, "outputTokens": 5,
+                                         "cacheReadInputTokens": 1,
+                                         "cacheCreationInputTokens": 4}},
+        "totalSessions": 3, "totalMessages": 40, "lastComputedDate": "2026-08-19",
+        "dailyModelTokens": [{"date": "2026-08-19", "tokensByModel": {"a": 7}}],
+    }))
+    monkeypatch.setattr(
+        "aicontrol.providers.claude_code.ClaudeCodeProvider.binary",
+        staticmethod(lambda: "/usr/bin/true"))
+    monkeypatch.setattr(usage_mod.subprocess, "run",
+                        lambda *a, **k: _subprocess.CompletedProcess(
+                            a[0], 0, _json.dumps({"loggedIn": True,
+                                                  "subscriptionType": "max",
+                                                  "email": "me@example.com"}), ""))
+
+    usage = UsageServiceStub()._claude_sync()
+    assert usage.plan == "max"
+    assert usage.available is True
+    # No fabricated windows, and an explicit reason.
+    assert usage.windows == []
+    assert "no live quota API" in usage.note
+    assert usage.totals["lifetimeTokens"] == 20
+    assert usage.totals["computedAt"] == "2026-08-19"
+
+
+class UsageServiceStub:
+    """UsageService without a Codex provider, for the Claude-only path."""
+
+    def __init__(self):
+        from aicontrol.services.usage import UsageService
+        self._inner = UsageService(None)
+
+    def _claude_sync(self):
+        return self._inner._claude_sync()
+
+
+def test_claude_last_limit_event_is_found_and_dated(monkeypatch, tmp_path):
+    import json as _json
+    from aicontrol.services import usage as usage_mod
+
+    projects = tmp_path / "projects" / "-tmp-repo"
+    projects.mkdir(parents=True)
+    (projects / "abc.jsonl").write_text(_json.dumps({
+        "type": "assistant", "timestamp": "2026-08-22T17:23:14.253Z",
+        "message": {"role": "assistant", "content": [
+            {"type": "text",
+             "text": "You've hit your weekly limit · resets Aug 14 at 1am"}]},
+    }))
+    monkeypatch.setattr(usage_mod, "PROJECTS_DIR", tmp_path / "projects")
+
+    event = usage_mod.UsageService._claude_last_limit_event()
+    assert event["kind"] == "weekly"
+    assert "weekly limit" in event["text"]
+    assert event["timestamp"].startswith("2026-08-22")

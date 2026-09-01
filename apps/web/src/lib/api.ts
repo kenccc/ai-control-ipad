@@ -110,6 +110,9 @@ export const api = {
   closeTerminal: (id: string) => del(`/api/terminals/${enc(id)}`),
 
   diagnostics: () => get<import('./types').Diagnostics>('/api/diagnostics'),
+  usage: (refresh = false) =>
+    get<{ providers: import('./types').ProviderUsage[] }>(
+      `/api/usage${refresh ? '?refresh=true' : ''}`),
   activity: (limit = 100, sessionId?: string) =>
     get<{ activity: import('./types').ActivityEntry[] }>(
       `/api/activity?limit=${limit}${sessionId ? `&session_id=${enc(sessionId)}` : ''}`),

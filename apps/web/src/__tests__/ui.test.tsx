@@ -160,3 +160,44 @@ describe('the composer', () => {
     expect(screen.getByText(/Continues the same Codex App session/)).toBeTruthy()
   })
 })
+
+describe('usage meters', () => {
+  it('colours by headroom, not by provider', async () => {
+    const { meterTone } = await import('../components/Usage')
+    expect(meterTone(0)).toBe('ok')
+    expect(meterTone(59)).toBe('ok')
+    expect(meterTone(60)).toBe('warn')
+    expect(meterTone(84)).toBe('warn')
+    expect(meterTone(85)).toBe('hot')
+    expect(meterTone(100)).toBe('hot')
+  })
+
+  it('describes resets as time remaining, not absolute epochs', async () => {
+    const { resetLabel } = await import('../components/Usage')
+    const now = Date.now() / 1000
+    expect(resetLabel(null)).toBe('')
+    expect(resetLabel(now - 10)).toBe('resetting')
+    expect(resetLabel(now + 90 * 60)).toBe('resets in 1h 30m')
+    expect(resetLabel(now + 20 * 60)).toBe('resets in 20m')
+    expect(resetLabel(now + 5 * 86400)).toBe('resets in 5d')
+  })
+
+  it('abbreviates large token counts', async () => {
+    const { formatTokens } = await import('../components/Usage')
+    expect(formatTokens(950)).toBe('950')
+    expect(formatTokens(12_300)).toBe('12.3k')
+    expect(formatTokens(4_500_000)).toBe('4.5M')
+    expect(formatTokens(2_798_507_409)).toBe('2.8B')
+  })
+
+  it('renders a meter clamped to 0-100 with an accessible value', async () => {
+    const { Meter } = await import('../components/Usage')
+    const { container } = render(
+      <Meter window={{ label: '5-hour', usedPercent: 142, resetsAt: null,
+                       windowMinutes: 300 }} />)
+    const fill = container.querySelector('.meter-fill') as HTMLElement
+    expect(fill.style.width).toBe('100%')
+    expect(fill.className).toContain('hot')
+    expect(container.querySelector('[role=meter]')?.getAttribute('aria-valuenow')).toBe('100')
+  })
+})

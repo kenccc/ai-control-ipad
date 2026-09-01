@@ -609,3 +609,45 @@ button, input, textarea, select { font: inherit; color: inherit; }
   padding: 1px 5px; border-radius: 3px;
   color: #ffa198; background: #f851491a; border: 1px solid #f8514940;
 }
+
+/* --------------------------------------------------------------------- meters */
+/* Usage bars. Colour tracks headroom, not provider — the only question a glance
+   needs answered is "how close am I to being cut off". */
+
+.meters { display: flex; flex-direction: column; gap: 7px; }
+
+.meter-row { display: flex; align-items: center; gap: 9px; font-size: 12px; }
+.meter-label { width: 66px; flex: none; color: var(--text-dim); }
+.meter {
+  flex: 1; min-width: 60px; height: 6px; border-radius: 3px;
+  background: var(--bg-panel); border: 1px solid var(--border); overflow: hidden;
+}
+.meter-fill { height: 100%; border-radius: 2px; transition: width .3s ease; }
+.meter-fill.ok   { background: var(--run); }
+.meter-fill.warn { background: var(--wait); }
+.meter-fill.hot  { background: var(--fail); }
+.meter-pct { width: 36px; flex: none; text-align: right; color: var(--text-dim); }
+.meter-reset { flex: none; font-size: 11px; min-width: 96px; text-align: right; }
+
+@media (prefers-reduced-motion: reduce) { .meter-fill { transition: none; } }
+
+/* Sidebar gauge: the tightest window, always visible without navigating. */
+.nav-usage {
+  padding: 8px 12px; border-top: 1px solid var(--border);
+  display: flex; flex-direction: column; gap: 5px;
+}
+.nav-usage .nav-usage-row {
+  display: flex; align-items: center; gap: 7px; font-size: 11px; color: var(--text-faint);
+}
+.nav-usage .nav-usage-row .who { flex: none; width: 62px; }
+.nav-usage .meter { height: 4px; }
+.nav-usage .pct { flex: none; width: 30px; text-align: right; font-family: var(--mono); }
+
+/* Sparkline of recent daily token use. */
+.spark {
+  display: flex; align-items: flex-end; gap: 2px; height: 34px;
+  padding: 2px; background: var(--bg-panel);
+  border: 1px solid var(--border); border-radius: var(--r);
+}
+.spark-bar { flex: 1; background: var(--accent-dim); border-radius: 1px; min-height: 2px; }
+.spark-bar:last-child { background: var(--accent); }

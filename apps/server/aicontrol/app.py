@@ -29,6 +29,7 @@ from .registry import SessionRegistry
 from .services.forgejo import ForgejoClient
 from .services.git_service import GitService
 from .services.pty_service import PtyService
+from .services.usage import UsageService
 from .services.worktrees import WorktreeManager
 from .api import codex as codex_routes
 from .api import diagnostics as diagnostics_routes
@@ -67,6 +68,7 @@ def build_state(config: Optional[Config] = None) -> AppState:
 
     return AppState(config=config, db=db, bus=bus, auth=auth, git=git, pty=pty,
                     worktrees=worktrees, registry=registry,
+                    usage=UsageService(codex_desktop),
                     codex_desktop=codex_desktop, codex_cli=codex_cli,
                     claude_code=claude_code, forgejo=forgejo)
 

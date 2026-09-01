@@ -6,6 +6,7 @@ import { ContextPanel } from './components/ContextPanel'
 import { CommandPalette } from './components/CommandPalette'
 import { NewAgent } from './components/NewAgent'
 import { DiagnosticsView } from './components/Diagnostics'
+import { UsageView } from './components/Usage'
 import {
   ActivityView, IssuesView, ProjectView, PullView, PullsView, RepoView, ReposView,
 } from './components/Lists'
@@ -73,6 +74,7 @@ export function App() {
       {view.kind === 'repos' && <ReposView onOpen={(name) => navigate({ kind: 'repo', name })} />}
       {view.kind === 'repo' && <RepoView name={view.name} onNavigate={navigate} />}
       {view.kind === 'activity' && <ActivityView />}
+      {view.kind === 'usage' && <UsageView />}
       {view.kind === 'diagnostics' && <DiagnosticsView />}
       {view.kind === 'project' && <ProjectView id={view.id} onNavigate={navigate} />}
 

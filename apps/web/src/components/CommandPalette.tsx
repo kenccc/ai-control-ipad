@@ -47,6 +47,7 @@ export function CommandPalette({ mode, onClose, onNavigate, onNewAgent }: Props)
         { group: 'Commands', label: 'Pull requests', run: () => onNavigate({ kind: 'pulls' }) },
         { group: 'Commands', label: 'Repositories', run: () => onNavigate({ kind: 'repos' }) },
         { group: 'Commands', label: 'Activity', run: () => onNavigate({ kind: 'activity' }) },
+        { group: 'Commands', label: 'Usage limits', run: () => onNavigate({ kind: 'usage' }) },
         { group: 'Commands', label: 'Diagnostics', run: () => onNavigate({ kind: 'diagnostics' }) },
       )
     } else if (mode === 'command') {
@@ -56,6 +57,7 @@ export function CommandPalette({ mode, onClose, onNavigate, onNewAgent }: Props)
         ['Open pull requests', () => onNavigate({ kind: 'pulls' })],
         ['Open repositories', () => onNavigate({ kind: 'repos' })],
         ['Open activity feed', () => onNavigate({ kind: 'activity' })],
+        ['Open usage limits', () => onNavigate({ kind: 'usage' })],
         ['Open diagnostics', () => onNavigate({ kind: 'diagnostics' })],
       ]
       for (const [label, run] of commands) {

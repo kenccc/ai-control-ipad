@@ -125,3 +125,15 @@ async def search(request: Request, q: str = Query(..., min_length=1),
 
     return {"sessions": sessions, "repositories": repositories,
             "codexProjects": projects, "issues": issues[:10]}
+
+
+@router.get("/usage")
+async def usage(request: Request, refresh: bool = Query(False),
+                app: AppState = Depends(state)) -> dict[str, Any]:
+    """Plan and rate-limit status for both agent providers.
+
+    Codex reports real windows; Claude Code reports what it actually exposes, with a
+    note saying why there is no percentage. Neither number is invented.
+    """
+    app.auth.require_session(request)
+    return await app.usage.read(force=refresh)

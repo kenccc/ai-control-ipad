@@ -18,6 +18,7 @@ from ..registry import SessionRegistry
 from ..services.forgejo import ForgejoClient
 from ..services.git_service import GitService
 from ..services.pty_service import PtyService
+from ..services.usage import UsageService
 from ..services.worktrees import WorktreeManager
 
 
@@ -31,6 +32,7 @@ class AppState:
     pty: PtyService
     worktrees: WorktreeManager
     registry: SessionRegistry
+    usage: UsageService
     codex_desktop: CodexDesktopProvider
     codex_cli: CodexCLIProvider
     claude_code: ClaudeCodeProvider

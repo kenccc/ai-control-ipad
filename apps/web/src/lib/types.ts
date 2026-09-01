@@ -121,3 +121,31 @@ export interface Diagnostics {
   repositories: Repository[]
   terminals: number
 }
+
+export interface UsageWindow {
+  label: string
+  usedPercent: number
+  resetsAt: number | null
+  windowMinutes: number | null
+}
+
+export interface ProviderUsage {
+  provider: string
+  label: string
+  available: boolean
+  plan: string | null
+  account: string | null
+  windows: UsageWindow[]
+  credits: {
+    balance: string | null
+    hasCredits: boolean
+    unlimited: boolean
+    resetCreditsAvailable: number | null
+  } | null
+  totals: Record<string, any> | null
+  note: string | null
+  error: string | null
+  lastLimitEvent: { text: string; kind?: string; timestamp?: string | number
+                    sessionId?: string } | null
+  fetchedAt: number
+}
