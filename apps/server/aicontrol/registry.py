@@ -69,8 +69,12 @@ class SessionRegistry:
                 try:
                     discovered.extend(await provider.discover_sessions())
                 except Exception as exc:
-                    log.warning("provider %s discovery failed: %s",
-                                provider.provider_id, exc)
+                    # Several exception types stringify to "" (asyncio.TimeoutError
+                    # among them), so include the class and a traceback -- a bare
+                    # "discovery failed: " tells you nothing at 3am.
+                    log.warning("provider %s discovery failed: %s: %s",
+                                provider.provider_id, type(exc).__name__, exc,
+                                exc_info=True)
 
             merged = self._deduplicate(discovered)
             previous = self._sessions
